@@ -7,28 +7,28 @@ firebase.initializeApp(config);
 const {
   validateSignupData,
   validateLoginData,
-  reduceUserDetails
+  reduceUserDetails,
 } = require("../util/validators");
 
 exports.signup = (req, res) => {
   const newUser = {
-    email: req.body.email,
-    password: req.body.password,
+    newEmail: req.body.newEmail,
+    newPassword: req.body.newPassword,
     confirmPassword: req.body.confirmPassword,
-    handle: req.body.handle
+    handle: req.body.handle,
   };
 
   const { valid, errors } = validateSignupData(newUser);
 
   if (!valid) return res.status(400).json(errors);
 
-  const noImg = "no-img.png";
+  const noImg = "no-img.jpg";
 
   // VALIDATE DATA
   let token, userId;
   db.doc(`/users/${newUser.handle}`)
     .get()
-    .then(doc => {
+    .then((doc) => {
       if (doc.exists) {
         // if handle exists, stop
         return res.status(400).json({ handle: "this handle is already taken" });
@@ -36,31 +36,38 @@ exports.signup = (req, res) => {
         // create user
         return firebase
           .auth()
-          .createUserWithEmailAndPassword(newUser.email, newUser.password);
+          .createUserWithEmailAndPassword(
+            newUser.newEmail,
+            newUser.newPassword
+          );
       }
     })
-    .then(data => {
+    .then((data) => {
       userId = data.user.uid;
       return data.user.getIdToken();
     })
-    .then(idToken => {
+    .then((idToken) => {
       token = idToken;
       const userCredentials = {
         handle: newUser.handle,
-        email: newUser.email,
+        email: newUser.newEmail,
         createdAt: new Date().toISOString(),
         imageUrl: `https://firebasestorage.googleapis.com/v0/b/${config.storageBucket}/o/${noImg}?alt=media`,
-        userId
+        userId,
       };
       return db.doc(`/users/${newUser.handle}`).set(userCredentials);
     })
     .then(() => {
       return res.status(201).json({ token });
     })
-    .catch(err => {
+    .catch((err) => {
       console.error(err);
       if (err.code === "auth/email-already-in-use") {
-        return res.status(400).json({ email: "email is already in use" });
+        return res.status(400).json({ newEmail: "Email is already in use." });
+      } else if (err.code === "auth/weak-password") {
+        return res
+          .status(400)
+          .json({ newPassword: "Password must be at least 6 characters." });
       } else {
         return res
           .status(500)
@@ -72,7 +79,7 @@ exports.signup = (req, res) => {
 exports.login = (req, res) => {
   const user = {
     email: req.body.email,
-    password: req.body.password
+    password: req.body.password,
   };
 
   const { valid, errors } = validateLoginData(user);
@@ -82,13 +89,13 @@ exports.login = (req, res) => {
   firebase
     .auth()
     .signInWithEmailAndPassword(user.email, user.password)
-    .then(data => {
+    .then((data) => {
       return data.user.getIdToken();
     })
-    .then(token => {
+    .then((token) => {
       return res.json({ token });
     })
-    .catch(err => {
+    .catch((err) => {
       console.error(err);
       //"auth/wrong-password"
       //"auth/user-not-found"
@@ -105,10 +112,12 @@ exports.addUserDetails = (req, res) => {
   db.doc(`/users/${req.user.handle}`)
     .update(userDetails)
     .then(() => {
-      return res.json({ message: "Details added successfully" }).catch(err => {
-        console.log(err);
-        return res.status(500).json({ error: err.code });
-      });
+      return res
+        .json({ message: "Details added successfully" })
+        .catch((err) => {
+          console.log(err);
+          return res.status(500).json({ error: err.code });
+        });
     });
 };
 
@@ -117,7 +126,7 @@ exports.getUserDetails = (req, res) => {
   let userData = {};
   db.doc(`/users/${req.params.handle}`)
     .get()
-    .then(doc => {
+    .then((doc) => {
       if (doc.exists) {
         userData.user = doc.data();
         return db
@@ -127,9 +136,9 @@ exports.getUserDetails = (req, res) => {
           .get();
       }
     })
-    .then(data => {
+    .then((data) => {
       userData.posts = [];
-      data.forEach(doc => {
+      data.forEach((doc) => {
         userData.posts.push({
           body: doc.data().body,
           createdAt: doc.data().createdAt,
@@ -137,12 +146,12 @@ exports.getUserDetails = (req, res) => {
           userImage: doc.data().userImage,
           likeCount: doc.data().likeCount,
           commentCount: doc.data().commentCount,
-          postId: doc.id
+          postId: doc.id,
         });
       });
       return res.json(userData);
     })
-    .catch(err => {
+    .catch((err) => {
       console.error(err);
       return res.status(500).json({ error: err.code });
     });
@@ -153,7 +162,7 @@ exports.getAuthenticatedUser = (req, res) => {
   let userData = {};
   db.doc(`/users/${req.user.handle}`)
     .get()
-    .then(doc => {
+    .then((doc) => {
       if (doc.exists) {
         userData.credentials = doc.data();
         return db
@@ -162,9 +171,9 @@ exports.getAuthenticatedUser = (req, res) => {
           .get();
       }
     })
-    .then(data => {
+    .then((data) => {
       userData.likes = [];
-      data.forEach(doc => {
+      data.forEach((doc) => {
         userData.likes.push(doc.data());
       });
       return db
@@ -174,9 +183,9 @@ exports.getAuthenticatedUser = (req, res) => {
         .limit(10)
         .get();
     })
-    .then(data => {
+    .then((data) => {
       userData.notifications = [];
-      data.forEach(doc => {
+      data.forEach((doc) => {
         userData.notifications.push({
           recipient: doc.data().recipient,
           sender: doc.data().sender,
@@ -184,12 +193,12 @@ exports.getAuthenticatedUser = (req, res) => {
           postId: doc.data().postId,
           type: doc.data().type,
           read: doc.data().read,
-          notificationId: doc.id
+          notificationId: doc.id,
         });
       });
       return res.json(userData);
     })
-    .catch(err => {
+    .catch((err) => {
       console.error(err);
       return res.status(500).json({ error: err.code });
     });
@@ -201,6 +210,7 @@ exports.uploadImage = (req, res) => {
   const path = require("path");
   const os = require("os");
   const fs = require("fs");
+  const sharp = require("sharp");
 
   const busboy = new BusBoy({ headers: req.headers });
 
@@ -209,12 +219,12 @@ exports.uploadImage = (req, res) => {
 
   busboy.on("file", (fieldname, file, filename, encoding, mimetype) => {
     console.log(fieldname, file, filename, encoding, mimetype);
-    if (mimetype !== "image/jpeg" && mimetype !== "image/png") {
-      return res.status(400).json({ error: "Wrong file type submitted" });
+    if (mimetype !== "image/jpeg" && mimetype !== "image/jpg") {
+      return res.status(400).json({ error: "Only jpg/jpeg files accepted." });
     }
     // my.image.png => ['my', 'image', 'png']
     const imageExtension = filename.split(".")[filename.split(".").length - 1];
-    // 32756238461724837.png
+
     imageFileName = `${Math.round(
       Math.random() * 1000000000000
     ).toString()}.${imageExtension}`;
@@ -223,6 +233,10 @@ exports.uploadImage = (req, res) => {
     file.pipe(fs.createWriteStream(filepath));
   });
   busboy.on("finish", () => {
+    sharp(imageToBeUploaded.filepath)
+      .resize(400, 400)
+      .toFile(imageToBeUploaded.filepath);
+
     admin
       .storage()
       .bucket()
@@ -230,9 +244,9 @@ exports.uploadImage = (req, res) => {
         resumable: false,
         metadata: {
           metadata: {
-            contentType: imageToBeUploaded.mimetype
-          }
-        }
+            contentType: imageToBeUploaded.mimetype,
+          },
+        },
       })
       .then(() => {
         const imageUrl = `https://firebasestorage.googleapis.com/v0/b/${config.storageBucket}/o/${imageFileName}?alt=media`;
@@ -241,7 +255,7 @@ exports.uploadImage = (req, res) => {
       .then(() => {
         return res.json({ message: "image uploaded successfully" });
       })
-      .catch(err => {
+      .catch((err) => {
         console.error(err);
         return res.status(500).json({ error: "something went wrong" });
       });
@@ -251,7 +265,7 @@ exports.uploadImage = (req, res) => {
 
 exports.markNotificationsRead = (req, res) => {
   let batch = db.batch();
-  req.body.forEach(notificationId => {
+  req.body.forEach((notificationId) => {
     const notification = db.doc(`/notifications/${notificationId}`);
     batch.update(notification, { read: true });
   });
@@ -260,7 +274,7 @@ exports.markNotificationsRead = (req, res) => {
     .then(() => {
       return res.json({ message: "Notifications marked read" });
     })
-    .catch(err => {
+    .catch((err) => {
       console.error(err);
       return res.status(500).json({ error: err.code });
     });

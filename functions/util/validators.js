@@ -1,29 +1,29 @@
 // verify email
-const isEmail = email => {
+const isEmail = (email) => {
   const regEx = /^(([^<>()\[\]\\.,;:\s@"]+(\.[^<>()\[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/;
   if (email.match(regEx)) return true;
   else return false;
 };
 
 // verify if empty
-const isEmpty = string => {
+const isEmpty = (string) => {
   if (string.trim() === "") return true;
   else return false;
 };
 
-exports.validateSignupData = data => {
+exports.validateSignupData = (data) => {
   let errors = {};
 
   // verify email
-  if (isEmpty(data.email)) {
-    errors.email = "Must not be empty";
-  } else if (!isEmail(data.email)) {
-    errors.email = "Must be a valid email address";
+  if (isEmpty(data.newEmail)) {
+    errors.newEmail = "Must not be empty";
+  } else if (!isEmail(data.newEmail)) {
+    errors.newEmail = "Must be a valid email address";
   }
 
   // verify pw
-  if (isEmpty(data.password)) errors.password = "Must not be empty";
-  if (data.password !== data.confirmPassword)
+  if (isEmpty(data.newPassword)) errors.newPassword = "Must not be empty";
+  if (data.newPassword !== data.confirmPassword)
     errors.confirmPassword = "Passwords must match";
 
   // verify handle
@@ -31,11 +31,11 @@ exports.validateSignupData = data => {
 
   return {
     errors,
-    valid: Object.keys(errors).length === 0 ? true : false
+    valid: Object.keys(errors).length === 0 ? true : false,
   };
 };
 
-exports.validateLoginData = data => {
+exports.validateLoginData = (data) => {
   let errors = {};
 
   if (isEmpty(data.email)) errors.email = "Must not be empty";
@@ -43,11 +43,11 @@ exports.validateLoginData = data => {
 
   return {
     errors,
-    valid: Object.keys(errors).length === 0 ? true : false
+    valid: Object.keys(errors).length === 0 ? true : false,
   };
 };
 
-exports.reduceUserDetails = data => {
+exports.reduceUserDetails = (data) => {
   let userDetails = {};
 
   // if body is not empty
