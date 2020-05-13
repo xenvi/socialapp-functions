@@ -54,6 +54,9 @@ exports.signup = (req, res) => {
         createdAt: new Date().toISOString(),
         imageUrl: `https://firebasestorage.googleapis.com/v0/b/${config.storageBucket}/o/${noImg}?alt=media`,
         userId,
+        followingCount: 0,
+        followersCount: 0,
+        headerUrl: "",
       };
       return db.doc(`/users/${newUser.handle}`).set(userCredentials);
     })
@@ -204,6 +207,23 @@ exports.getAuthenticatedUser = (req, res) => {
     });
 };
 
+exports.getNewestUsers = (req, res) => {
+  let orderedUsers = [];
+  db.collection("users")
+    .orderBy("createdAt", "desc")
+    .limit(4)
+    .onSnapshot((querySnapshot) => {
+      querySnapshot.forEach((doc) => {
+        orderedUsers.push({
+          userId: doc.data().userId,
+          handle: doc.data().handle,
+          imageUrl: doc.data().imageUrl,
+        });
+      });
+      return res.json(orderedUsers);
+    });
+};
+
 // upload profile picture
 exports.uploadImage = (req, res) => {
   const BusBoy = require("busboy");
@@ -263,6 +283,65 @@ exports.uploadImage = (req, res) => {
   busboy.end(req.rawBody);
 };
 
+// upload header picture
+exports.uploadHeaderImage = (req, res) => {
+  const BusBoy = require("busboy");
+  const path = require("path");
+  const os = require("os");
+  const fs = require("fs");
+  const sharp = require("sharp");
+
+  const busboy = new BusBoy({ headers: req.headers });
+
+  let imageToBeUploaded = {};
+  let imageFileName;
+
+  busboy.on("file", (fieldname, file, filename, encoding, mimetype) => {
+    console.log(fieldname, file, filename, encoding, mimetype);
+    if (mimetype !== "image/jpeg" && mimetype !== "image/jpg") {
+      return res.status(400).json({ error: "Only jpg/jpeg files accepted." });
+    }
+    // my.image.png => ['my', 'image', 'png']
+    const imageExtension = filename.split(".")[filename.split(".").length - 1];
+
+    imageFileName = `${Math.round(
+      Math.random() * 1000000000000
+    ).toString()}.${imageExtension}`;
+    const filepath = path.join(os.tmpdir(), imageFileName);
+    imageToBeUploaded = { filepath, mimetype };
+    file.pipe(fs.createWriteStream(filepath));
+  });
+  busboy.on("finish", () => {
+    sharp(imageToBeUploaded.filepath)
+      .resize(500, 800)
+      .toFile(imageToBeUploaded.filepath);
+
+    admin
+      .storage()
+      .bucket()
+      .upload(imageToBeUploaded.filepath, {
+        resumable: false,
+        metadata: {
+          metadata: {
+            contentType: imageToBeUploaded.mimetype,
+          },
+        },
+      })
+      .then(() => {
+        const headerUrl = `https://firebasestorage.googleapis.com/v0/b/${config.storageBucket}/o/${imageFileName}?alt=media`;
+        return db.doc(`/users/${req.user.handle}`).update({ headerUrl });
+      })
+      .then(() => {
+        return res.json({ message: "header image uploaded successfully" });
+      })
+      .catch((err) => {
+        console.error(err);
+        return res.status(500).json({ error: "something went wrong" });
+      });
+  });
+  busboy.end(req.rawBody);
+};
+
 exports.markNotificationsRead = (req, res) => {
   let batch = db.batch();
   req.body.forEach((notificationId) => {
@@ -278,4 +357,140 @@ exports.markNotificationsRead = (req, res) => {
       console.error(err);
       return res.status(500).json({ error: err.code });
     });
+};
+
+exports.followUser = (req, res) => {
+  const followDoc = db
+    .collection("follows")
+    .where("receiverHandle", "==", req.params.handle)
+    .where("senderHandle", "==", req.user.handle)
+    .limit(1);
+
+  const userDoc = db.doc(`/users/${req.params.handle}`);
+
+  const currentUserDoc = db.doc(`/users/${req.user.handle}`);
+
+  let userData;
+
+  userDoc
+    .get()
+    .then((doc) => {
+      if (doc.exists) {
+        userData = doc.data();
+        userData.userId = doc.id;
+        return followDoc.get();
+      } else {
+        return res.status(404).json({ error: "User not found" });
+      }
+    })
+    .then((data) => {
+      if (data.empty) {
+        return db
+          .collection("follows")
+          .add({
+            receiverHandle: req.params.handle,
+            senderHandle: req.user.handle,
+          })
+          .then(() => {
+            userData.followersCount++;
+            userDoc.update({ followersCount: userData.followersCount });
+
+            return currentUserDoc.get();
+          })
+          .then((doc) => {
+            currentUserData = doc.data();
+            currentUserData.followingCount++;
+            currentUserDoc.update({
+              followingCount: currentUserData.followingCount,
+            });
+          })
+          .then(() => {
+            return res.status(500).json({
+              userData: userData,
+              currentUserData: currentUserData,
+            });
+          });
+      } else {
+        return res.status(400).json({ error: "User already followed" });
+      }
+    })
+    .catch((err) => {
+      res.status(500).json({ error: err.code });
+    });
+};
+
+exports.unfollowUser = (req, res) => {
+  const followDoc = db
+    .collection("follows")
+    .where("receiverHandle", "==", req.params.handle)
+    .where("senderHandle", "==", req.user.handle)
+    .limit(1);
+
+  const userDoc = db.doc(`/users/${req.params.handle}`);
+
+  const currentUserDoc = db.doc(`/users/${req.user.handle}`);
+
+  let userData;
+
+  userDoc
+    .get()
+    .then((doc) => {
+      if (doc.exists) {
+        userData = doc.data();
+        userData.userId = doc.id;
+        return followDoc.get();
+      } else {
+        return res.status(404).json({ error: "User not found" });
+      }
+    })
+    .then((data) => {
+      if (data.empty) {
+        return res.status(400).json({ error: "User not followed" });
+      } else {
+        return db
+          .doc(`/follows/${data.docs[0].id}`)
+          .delete()
+          .then(() => {
+            userData.followersCount--;
+            userDoc.update({ followersCount: userData.followersCount });
+
+            return currentUserDoc.get();
+          })
+          .then((doc) => {
+            currentUserData = doc.data();
+            currentUserData.followingCount--;
+            currentUserDoc.update({
+              followingCount: currentUserData.followingCount,
+            });
+          })
+          .then(() => {
+            return res.status(500).json({
+              userData: userData,
+              currentUserData: currentUserData,
+            });
+          });
+      }
+    })
+    .catch((err) => {
+      res.status(500).json({ error: err.code });
+    });
+};
+
+exports.getFollowers = (req, res) => {
+  const followersDoc = db
+    .collection("follows")
+    .where("receiverHandle", "==", req.user.handle);
+
+  followersDoc
+    .get()
+    .then(doc)
+    .catch((err) => {
+      res.status(500).json({ error: err.code });
+    });
+};
+
+exports.getFollowing = (req, res) => {
+  const followingDoc = db
+    .collection("follows")
+    .where("senderHandle", "==", req.user.handle);
 };
