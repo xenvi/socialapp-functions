@@ -115,12 +115,11 @@ exports.addUserDetails = (req, res) => {
   db.doc(`/users/${req.user.handle}`)
     .update(userDetails)
     .then(() => {
-      return res
-        .json({ message: "Details added successfully" })
-        .catch((err) => {
-          console.log(err);
-          return res.status(500).json({ error: err.code });
-        });
+      return res.json({ message: "Details added successfully" });
+    })
+    .catch((err) => {
+      console.log(err);
+      return res.status(500).json({ error: err.code });
     });
 };
 
@@ -199,6 +198,32 @@ exports.getAuthenticatedUser = (req, res) => {
           notificationId: doc.id,
         });
       });
+      return db
+        .collection("follows")
+        .where("senderHandle", "==", req.user.handle)
+        .get();
+    })
+    .then((data) => {
+      userData.following = [];
+      data.forEach((doc) => {
+        userData.following.push({
+          recipient: doc.data().receiverHandle,
+          sender: doc.data().senderHandle,
+        });
+      });
+      return db
+        .collection("follows")
+        .where("receiverHandle", "==", req.user.handle)
+        .get();
+    })
+    .then((data) => {
+      userData.followers = [];
+      data.forEach((doc) => {
+        userData.followers.push({
+          recipient: doc.data().receiverHandle,
+          sender: doc.data().senderHandle,
+        });
+      });
       return res.json(userData);
     })
     .catch((err) => {
@@ -255,7 +280,13 @@ exports.uploadImage = (req, res) => {
   busboy.on("finish", () => {
     sharp(imageToBeUploaded.filepath)
       .resize(400, 400)
-      .toFile(imageToBeUploaded.filepath);
+      .toBuffer()
+      .then((data) => {
+        fs.writeFileSync(imageToBeUploaded.filepath, data);
+      })
+      .catch((err) => {
+        console.log(err);
+      });
 
     admin
       .storage()
@@ -277,9 +308,10 @@ exports.uploadImage = (req, res) => {
       })
       .catch((err) => {
         console.error(err);
-        return res.status(500).json({ error: "something went wrong" });
+        return res.status(500).json({ error: err });
       });
   });
+
   busboy.end(req.rawBody);
 };
 
@@ -313,8 +345,14 @@ exports.uploadHeaderImage = (req, res) => {
   });
   busboy.on("finish", () => {
     sharp(imageToBeUploaded.filepath)
-      .resize(500, 800)
-      .toFile(imageToBeUploaded.filepath);
+      .resize({ width: 800 })
+      .toBuffer()
+      .then((data) => {
+        fs.writeFileSync(imageToBeUploaded.filepath, data);
+      })
+      .catch((err) => {
+        console.log(err);
+      });
 
     admin
       .storage()
@@ -336,7 +374,7 @@ exports.uploadHeaderImage = (req, res) => {
       })
       .catch((err) => {
         console.error(err);
-        return res.status(500).json({ error: "something went wrong" });
+        return res.status(500).json({ error: err });
       });
   });
   busboy.end(req.rawBody);
@@ -377,7 +415,6 @@ exports.followUser = (req, res) => {
     .then((doc) => {
       if (doc.exists) {
         userData = doc.data();
-        userData.userId = doc.id;
         return followDoc.get();
       } else {
         return res.status(404).json({ error: "User not found" });
@@ -405,7 +442,7 @@ exports.followUser = (req, res) => {
             });
           })
           .then(() => {
-            return res.status(500).json({
+            return res.status(200).json({
               userData: userData,
               currentUserData: currentUserData,
             });
@@ -415,7 +452,7 @@ exports.followUser = (req, res) => {
       }
     })
     .catch((err) => {
-      res.status(500).json({ error: err.code });
+      res.status(500).json({ error: err });
     });
 };
 
@@ -437,7 +474,6 @@ exports.unfollowUser = (req, res) => {
     .then((doc) => {
       if (doc.exists) {
         userData = doc.data();
-        userData.userId = doc.id;
         return followDoc.get();
       } else {
         return res.status(404).json({ error: "User not found" });
@@ -464,7 +500,7 @@ exports.unfollowUser = (req, res) => {
             });
           })
           .then(() => {
-            return res.status(500).json({
+            return res.status(200).json({
               userData: userData,
               currentUserData: currentUserData,
             });
@@ -472,18 +508,27 @@ exports.unfollowUser = (req, res) => {
       }
     })
     .catch((err) => {
-      res.status(500).json({ error: err.code });
+      res.status(500).json({ error: err });
     });
 };
 
 exports.getFollowers = (req, res) => {
+  let followers = [];
   const followersDoc = db
     .collection("follows")
     .where("receiverHandle", "==", req.user.handle);
 
   followersDoc
     .get()
-    .then(doc)
+    .then((data) => {
+      data.forEach((doc) => {
+        followers.push({
+          sender: doc.data().senderHandle,
+        });
+      });
+      return;
+    })
+    .then((data) => {})
     .catch((err) => {
       res.status(500).json({ error: err.code });
     });

@@ -4,7 +4,12 @@ const FBAuth = require("./util/fbAuth");
 
 const cors = require("cors");
 
-app.use(cors({ credentials: true, origin: true }));
+var corsOptions = {
+  origin: "*",
+  optionsSuccessStatus: 200,
+};
+
+app.use(cors(corsOptions));
 
 const { db } = require("./util/admin");
 
@@ -17,6 +22,7 @@ const {
   unlikePost,
   deletePost,
   getProfilePosts,
+  getHomePosts,
 } = require("./handlers/posts");
 const {
   signup,
@@ -32,19 +38,10 @@ const {
   uploadHeaderImage,
 } = require("./handlers/users");
 
-app.all("/api/*", function (req, res, next) {
-  res.header("Access-Control-Allow-Origin", "*");
-  res.header(
-    "Access-Control-Allow-Headers",
-    "Cache-Control, Pragma, Origin, Authorization, Content-Type, X-Requested-With"
-  );
-  res.header("Access-Control-Allow-Methods", "GET, PUT, POST");
-  return next();
-});
-
 // POST ROUTES //
 app.get("/posts", getAllPosts);
 app.get("/profilePosts/:handle", getProfilePosts);
+app.get("/homePosts/:handle", getHomePosts);
 app.post("/post", FBAuth, createAPost);
 app.get("/posts/:postId", getPost);
 app.delete("/post/:postId", FBAuth, deletePost);
@@ -65,10 +62,11 @@ app.get("/newusers", getNewestUsers);
 app.get("/user/:handle/follow", FBAuth, followUser);
 app.get("/user/:handle/unfollow", FBAuth, unfollowUser);
 
-exports.api = functions.https.onRequest(app);
+exports.api = functions.region("us-central1").https.onRequest(app);
 
-exports.deleteNotificationOnUnlike = functions.firestore
-  .document("likes/{id}")
+exports.deleteNotificationOnUnlike = functions
+  .region("us-central1")
+  .firestore.document("likes/{id}")
   .onDelete((snapshot) => {
     return db
       .doc(`/notifications/${snapshot.id}`)
@@ -79,8 +77,9 @@ exports.deleteNotificationOnUnlike = functions.firestore
       });
   });
 
-exports.createNotificationOnLike = functions.firestore
-  .document("likes/{id}")
+exports.createNotificationOnLike = functions
+  .region("us-central1")
+  .firestore.document("likes/{id}")
   .onCreate((snapshot) => {
     // snapshot = the likes
     return db
@@ -106,8 +105,9 @@ exports.createNotificationOnLike = functions.firestore
       });
   });
 
-exports.createNotificationOnComment = functions.firestore
-  .document("comments/{id}")
+exports.createNotificationOnComment = functions
+  .region("us-central1")
+  .firestore.document("comments/{id}")
   .onCreate((snapshot) => {
     return db
       .doc(`/posts/${snapshot.data().postId}`)
@@ -132,8 +132,9 @@ exports.createNotificationOnComment = functions.firestore
       });
   });
 
-exports.onUserImageChange = functions.firestore
-  .document("/users/{userId}")
+exports.onUserImageChange = functions
+  .region("us-central1")
+  .firestore.document("/users/{userId}")
   .onUpdate((change) => {
     console.log(change.before.data());
     console.log(change.after.data());
@@ -155,8 +156,9 @@ exports.onUserImageChange = functions.firestore
     } else return true;
   });
 
-exports.onPostDelete = functions.firestore
-  .document("/posts/{postId}")
+exports.onPostDelete = functions
+  .region("us-central1")
+  .firestore.document("/posts/{postId}")
   .onDelete((snapshot, context) => {
     const postId = context.params.postId;
     const batch = db.batch();

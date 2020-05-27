@@ -2,11 +2,11 @@ const { db } = require("../util/admin");
 
 // fetch all posts
 exports.getAllPosts = (req, res) => {
+  let posts = [];
   db.collection("posts")
     .where("location", "==", "explore")
     .orderBy("createdAt", "desc")
     .onSnapshot((querySnapshot) => {
-      let posts = [];
       querySnapshot.forEach((doc) => {
         posts.push({
           postId: doc.id,
@@ -24,12 +24,12 @@ exports.getAllPosts = (req, res) => {
 
 // fetch profile-specific posts
 exports.getProfilePosts = (req, res) => {
+  let posts = [];
   db.collection("posts")
     .where("location", "==", req.params.handle)
     .orderBy("createdAt", "desc")
     .get()
     .then((data) => {
-      let posts = [];
       data.forEach((doc) => {
         posts.push({
           postId: doc.id,
@@ -41,9 +41,79 @@ exports.getProfilePosts = (req, res) => {
           userImage: doc.data().userImage,
         });
       });
+      return db
+        .collection("posts")
+        .where("userHandle", "==", req.params.handle)
+        .where("location", "==", "explore")
+        .orderBy("createdAt", "desc")
+        .get();
+    })
+    .then((data) => {
+      data.forEach((doc) => {
+        posts.push({
+          postId: doc.id,
+          body: doc.data().body,
+          userHandle: doc.data().userHandle,
+          createdAt: doc.data().createdAt,
+          commentCount: doc.data().commentCount,
+          likeCount: doc.data().likeCount,
+          userImage: doc.data().userImage,
+        });
+      });
+      res.json(posts);
+    })
+    .catch((err) => {
+      res.status(500).json(err);
+    });
+};
+
+// fetch home-specific posts (of users following)
+exports.getHomePosts = (req, res) => {
+  const followDocument = db
+    .collection("follows")
+    .where("senderHandle", "==", req.params.handle);
+
+  followDocument
+    .get()
+    .then((data) => {
+      if (data.query.size == 0) {
+        throw new Error("NOT_FOUND");
+      } else {
+        let followDoc = [];
+        data.forEach((doc) => followDoc.push(doc.data()));
+        return followDoc;
+      }
+    })
+    .then((followData) => {
+      let posts = [];
+      followData.forEach((follow) => {
+        posts.push(
+          db
+            .collection("posts")
+            .where("userHandle", "==", follow.receiverHandle)
+            .where("location", "==", "explore")
+            .get()
+            .then((data) => {
+              data.map((doc) => ({
+                postId: doc.id,
+                body: doc.data().body,
+                userHandle: doc.data().userHandle,
+                createdAt: doc.data().createdAt,
+                commentCount: doc.data().commentCount,
+                likeCount: doc.data().likeCount,
+                userImage: doc.data().userImage,
+              }));
+            })
+        );
+      });
       return res.json(posts);
     })
-    .catch((err) => console.error(err));
+    .catch((err) => {
+      if (err.message === "NOT_FOUND") {
+        return res.status(400).json({ error: "Not following any users" });
+      }
+      res.status(500).json({ error: err.message });
+    });
 };
 
 // create a post
