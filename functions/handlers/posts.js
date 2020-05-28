@@ -73,8 +73,27 @@ exports.getHomePosts = (req, res) => {
     .collection("follows")
     .where("senderHandle", "==", req.params.handle);
 
-  followDocument
-    .get()
+  const userDocument = db
+  .collection("posts")
+  .where("userHandle", "==", req.params.handle)
+  .where("location", "==", "explore")
+  .orderBy("createdAt", "desc")
+
+  let posts = [];
+  userDocument.get().then((data) => {
+    data.forEach((doc) => {
+      posts.push({
+        postId: doc.id,
+        body: doc.data().body,
+        userHandle: doc.data().userHandle,
+        createdAt: doc.data().createdAt,
+        commentCount: doc.data().commentCount,
+        likeCount: doc.data().likeCount,
+        userImage: doc.data().userImage,
+      });
+    });
+    return followDocument.get()
+  })
     .then((data) => {
       if (data.query.size == 0) {
         throw new Error("NOT_FOUND");
@@ -85,16 +104,17 @@ exports.getHomePosts = (req, res) => {
       }
     })
     .then((followData) => {
-      let posts = [];
-      followData.forEach((follow) => {
-        posts.push(
-          db
-            .collection("posts")
-            .where("userHandle", "==", follow.receiverHandle)
-            .where("location", "==", "explore")
-            .get()
-            .then((data) => {
-              data.map((doc) => ({
+      const promises = followData.map((follow) => {
+        return db
+          .collection("posts")
+          .where("userHandle", "==", follow.receiverHandle)
+          .where("location", "==", "explore")
+          .get();
+      });
+      Promise.all(promises).then((results) => {
+        results.forEach((data) => {
+             data.forEach((doc) => (
+               posts.push({
                 postId: doc.id,
                 body: doc.data().body,
                 userHandle: doc.data().userHandle,
@@ -102,18 +122,18 @@ exports.getHomePosts = (req, res) => {
                 commentCount: doc.data().commentCount,
                 likeCount: doc.data().likeCount,
                 userImage: doc.data().userImage,
-              }));
-            })
-        );
+              })
+             ));
+          })
+        return res.json(posts);
       });
-      return res.json(posts);
     })
     .catch((err) => {
       if (err.message === "NOT_FOUND") {
         return res.status(400).json({ error: "Not following any users" });
       }
       res.status(500).json({ error: err.message });
-    });
+    })
 };
 
 // create a post
