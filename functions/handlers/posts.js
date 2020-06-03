@@ -136,6 +136,53 @@ exports.getHomePosts = (req, res) => {
     })
 };
 
+// get liked posts on profile
+exports.getLikedPosts = (req, res) => {
+  const likeDocument = db
+    .collection("likes")
+    .where("userHandle", "==", req.params.handle);
+
+    let posts = [];
+  likeDocument
+    .get()
+    .then((data) => {
+      if (data.query.size == 0) {
+        throw new Error("NOT_FOUND");
+      } else {
+      let postIds = [];
+      data.forEach((doc) => {
+        postIds.push({ postId: doc.data().postId });
+      });
+      return postIds;
+      }
+    })
+    .then((postIds) => {
+      const promises = postIds.map((post) => {
+        return db.doc(`/posts/${post.postId}`).get();
+      });
+      Promise.all(promises).then((results) => {
+        results.forEach((doc) => {
+               posts.push({
+                postId: doc.id,
+                body: doc.data().body,
+                userHandle: doc.data().userHandle,
+                createdAt: doc.data().createdAt,
+                commentCount: doc.data().commentCount,
+                likeCount: doc.data().likeCount,
+                userImage: doc.data().userImage,
+              })
+           })
+           return res.json(posts);
+       })
+    })
+    .catch((err) => {
+      if (err.message === "NOT_FOUND") {
+        return res.status(400).json({ error: "Not following any users" });
+      }
+      return res.status(500).json({ error: err.code });
+    });
+};
+
 // create a post
 exports.createAPost = (req, res) => {
   // if no post body, return error
@@ -209,19 +256,25 @@ exports.commentOnPost = (req, res) => {
     userImage: req.user.imageUrl,
   };
 
+  let postData;
   db.doc(`/posts/${req.params.postId}`)
     .get()
     .then((doc) => {
       if (!doc.exists) {
         return res.status(404).json({ error: "Post not found" });
       }
+      
+        postData = doc.data();
+        postData.postId = doc.id;
+        postData.commentCount++;
       return doc.ref.update({ commentCount: doc.data().commentCount + 1 });
     })
     .then(() => {
       return db.collection("comments").add(newComment);
     })
     .then(() => {
-      res.json(newComment);
+      res.json({comment: newComment,
+      post: postData});
     })
     .catch((err) => {
       console.log(err);

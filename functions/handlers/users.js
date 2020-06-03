@@ -53,10 +53,12 @@ exports.signup = (req, res) => {
         email: newUser.newEmail,
         createdAt: new Date().toISOString(),
         imageUrl: `https://firebasestorage.googleapis.com/v0/b/${config.storageBucket}/o/${noImg}?alt=media`,
+        imageUrlRef: `${noImg}`,
         userId,
         followingCount: 0,
         followersCount: 0,
         headerUrl: "",
+        headerUrlRef: "",
       };
       return db.doc(`/users/${newUser.handle}`).set(userCredentials);
     })
@@ -257,16 +259,20 @@ exports.uploadImage = (req, res) => {
   const fs = require("fs");
   const sharp = require("sharp");
 
-  const busboy = new BusBoy({ headers: req.headers });
+  const busboy = new BusBoy({ headers: req.headers, limits: { files: 1, fileSize: 2000000 } });
 
   let imageToBeUploaded = {};
   let imageFileName;
 
   busboy.on("file", (fieldname, file, filename, encoding, mimetype) => {
     console.log(fieldname, file, filename, encoding, mimetype);
-    if (mimetype !== "image/jpeg" && mimetype !== "image/jpg") {
-      return res.status(400).json({ error: "Only jpg/jpeg files accepted." });
+    if (mimetype !== "image/jpeg" && mimetype !== "image/jpg" && mimetype !== "image/png") {
+      return res.status(400).json({ error: "Only jpg/jpeg/png files accepted." });
     }
+    file.on('limit', function(data) {                                               
+      return res.status(400).json({ error: "Image exceeds 2MB limit." });
+    });
+
     // my.image.png => ['my', 'image', 'png']
     const imageExtension = filename.split(".")[filename.split(".").length - 1];
 
@@ -301,7 +307,8 @@ exports.uploadImage = (req, res) => {
       })
       .then(() => {
         const imageUrl = `https://firebasestorage.googleapis.com/v0/b/${config.storageBucket}/o/${imageFileName}?alt=media`;
-        return db.doc(`/users/${req.user.handle}`).update({ imageUrl });
+        const imageUrlRef = `${imageFileName}`;
+        return db.doc(`/users/${req.user.handle}`).update({ imageUrl, imageUrlRef });
       })
       .then(() => {
         return res.json({ message: "image uploaded successfully" });
@@ -323,16 +330,20 @@ exports.uploadHeaderImage = (req, res) => {
   const fs = require("fs");
   const sharp = require("sharp");
 
-  const busboy = new BusBoy({ headers: req.headers });
+  const busboy = new BusBoy({ headers: req.headers, limits: { files: 1, fileSize: 2000000 } });
 
   let imageToBeUploaded = {};
   let imageFileName;
 
   busboy.on("file", (fieldname, file, filename, encoding, mimetype) => {
-    console.log(fieldname, file, filename, encoding, mimetype);
-    if (mimetype !== "image/jpeg" && mimetype !== "image/jpg") {
-      return res.status(400).json({ error: "Only jpg/jpeg files accepted." });
+    // limits
+    if (mimetype !== "image/jpeg" && mimetype !== "image/jpg" && mimetype !== "image/png") {
+      return res.status(400).json({ error: "Only jpg/jpeg/png files accepted." });
     }
+    file.on('limit', function(data) {                                               
+      return res.status(400).json({ error: "Image exceeds 2MB limit." });
+    });
+
     // my.image.png => ['my', 'image', 'png']
     const imageExtension = filename.split(".")[filename.split(".").length - 1];
 
@@ -367,7 +378,8 @@ exports.uploadHeaderImage = (req, res) => {
       })
       .then(() => {
         const headerUrl = `https://firebasestorage.googleapis.com/v0/b/${config.storageBucket}/o/${imageFileName}?alt=media`;
-        return db.doc(`/users/${req.user.handle}`).update({ headerUrl });
+        const headerUrlRef = `${imageFileName}`;
+        return db.doc(`/users/${req.user.handle}`).update({ headerUrl, headerUrlRef });
       })
       .then(() => {
         return res.json({ message: "header image uploaded successfully" });
@@ -452,7 +464,7 @@ exports.followUser = (req, res) => {
       }
     })
     .catch((err) => {
-      res.status(500).json({ error: err });
+      return res.status(500).json({ error: err });
     });
 };
 
@@ -508,34 +520,104 @@ exports.unfollowUser = (req, res) => {
       }
     })
     .catch((err) => {
-      res.status(500).json({ error: err });
+      return res.status(500).json({ error: err });
     });
 };
 
 exports.getFollowers = (req, res) => {
-  let followers = [];
   const followersDoc = db
     .collection("follows")
-    .where("receiverHandle", "==", req.user.handle);
+    .where("receiverHandle", "==", req.params.handle);
 
+  let followers = [];
   followersDoc
     .get()
     .then((data) => {
+      if (data.query.size == 0) {
+        throw new Error("NOT_FOUND");
+      } else {
+        let followerHandles = [];
       data.forEach((doc) => {
-        followers.push({
+        followerHandles.push({
           sender: doc.data().senderHandle,
         });
       });
-      return;
+      return followerHandles;
+      }
     })
-    .then((data) => {})
+    .then((followerHandles) => {
+      const promises = followerHandles.map((follow) => {
+        return db
+          .collection("users")
+          .where("handle", "==", follow.sender)
+          .get();
+      });
+      Promise.all(promises).then((results) => {
+        results.forEach((data) => {
+             data.forEach((doc) => (
+               followers.push({
+                handle: doc.data().handle,
+                imageUrl: doc.data().imageUrl,
+                userId: doc.data().userId,
+              })
+              ));
+           })
+           return res.json(followers);
+       });
+    })
     .catch((err) => {
-      res.status(500).json({ error: err.code });
+      if (err.message === "NOT_FOUND") {
+        return res.status(400).json({ error: "Not following any users" });
+      }
+      return res.status(500).json({ error: err.code });
     });
 };
 
 exports.getFollowing = (req, res) => {
-  const followingDoc = db
+  const followersDoc = db
     .collection("follows")
-    .where("senderHandle", "==", req.user.handle);
+    .where("senderHandle", "==", req.params.handle);
+
+  let followers = [];
+  followersDoc
+    .get()
+    .then((data) => {
+      if (data.query.size == 0) {
+        throw new Error("NOT_FOUND");
+      } else {
+        let followerHandles = [];
+      data.forEach((doc) => {
+        followerHandles.push({
+          receiver: doc.data().receiverHandle,
+        });
+      });
+      return followerHandles;
+      }
+    })
+    .then((followerHandles) => {
+      const promises = followerHandles.map((follow) => {
+        return db
+          .collection("users")
+          .where("handle", "==", follow.receiver)
+          .get();
+      });
+      Promise.all(promises).then((results) => {
+        results.forEach((data) => {
+             data.forEach((doc) => (
+               followers.push({
+                handle: doc.data().handle,
+                imageUrl: doc.data().imageUrl,
+                userId: doc.data().userId,
+              })
+              ));
+           })
+           return res.json(followers);
+       });
+    })
+    .catch((err) => {
+      if (err.message === "NOT_FOUND") {
+        return res.status(400).json({ error: "Not following any users" });
+      }
+      return res.status(500).json({ error: err.code });
+    });
 };

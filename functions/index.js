@@ -5,13 +5,13 @@ const FBAuth = require("./util/fbAuth");
 const cors = require("cors");
 
 var corsOptions = {
-  origin: "*",
-  optionsSuccessStatus: 200,
+  origin: true,
+  credentials: true
 };
 
 app.use(cors(corsOptions));
 
-const { db } = require("./util/admin");
+const { admin, db } = require("./util/admin");
 
 const {
   getAllPosts,
@@ -23,6 +23,7 @@ const {
   deletePost,
   getProfilePosts,
   getHomePosts,
+  getLikedPosts
 } = require("./handlers/posts");
 const {
   signup,
@@ -36,12 +37,15 @@ const {
   followUser,
   unfollowUser,
   uploadHeaderImage,
+  getFollowers,
+  getFollowing
 } = require("./handlers/users");
 
 // POST ROUTES //
 app.get("/posts", getAllPosts);
 app.get("/profilePosts/:handle", getProfilePosts);
 app.get("/homePosts/:handle", getHomePosts);
+app.get("/likedPosts/:handle", getLikedPosts);
 app.post("/post", FBAuth, createAPost);
 app.get("/posts/:postId", getPost);
 app.delete("/post/:postId", FBAuth, deletePost);
@@ -61,6 +65,8 @@ app.post("/notifications", FBAuth, markNotificationsRead);
 app.get("/newusers", getNewestUsers);
 app.get("/user/:handle/follow", FBAuth, followUser);
 app.get("/user/:handle/unfollow", FBAuth, unfollowUser);
+app.get("/user/:handle/followers", getFollowers);
+app.get("/user/:handle/following", getFollowing);
 
 exports.api = functions.region("us-central1").https.onRequest(app);
 
@@ -132,7 +138,7 @@ exports.createNotificationOnComment = functions
       });
   });
 
-exports.onUserImageChange = functions
+  exports.onUserImagesChange = functions
   .region("us-central1")
   .firestore.document("/users/{userId}")
   .onUpdate((change) => {
@@ -141,8 +147,9 @@ exports.onUserImageChange = functions
 
     if (change.before.data().imageUrl !== change.after.data().imageUrl) {
       console.log("Image has been changed");
+
       const batch = db.batch();
-      return db
+      db
         .collection("posts")
         .where("userHandle", "==", change.before.data().handle)
         .get()
@@ -151,8 +158,42 @@ exports.onUserImageChange = functions
             const post = db.doc(`/posts/${doc.id}`);
             batch.update(post, { userImage: change.after.data().imageUrl });
           });
-          return batch.commit();
-        });
+        }).then(() => {
+            return db
+                    .collection("comments")
+                    .where("userHandle", "==", change.before.data().handle)
+                    .get();
+        }).then((data) => {
+          data.forEach((doc) => {
+            const comment = db.doc(`/comments/${doc.id}`);
+            batch.update(comment, { userImage: change.after.data().imageUrl });
+          });
+           return batch.commit();
+        }).then(() => {
+          return admin
+            .storage()
+            .bucket()
+            .file(`${change.before.data().imageUrlRef}`)
+            .delete()
+            .then(() => {
+                console.log(`Successfully deleted photo: ${change.before.data().imageUrl}`)
+            }).catch(err => {
+                console.error(err)
+            });
+        })
+      
+    } else if (change.before.data().headerUrl !== change.after.data().headerUrl && change.before.data().headerUrl !== "") {
+      console.log("Header image has been changed");
+          return admin
+            .storage()
+            .bucket()
+            .file(`${change.before.data().headerUrlRef}`)
+            .delete()
+            .then(() => {
+                console.log(`Successfully deleted header photo: ${change.before.data().headerUrl}`)
+            }).catch(err => {
+                console.error(err)
+            });
     } else return true;
   });
 
