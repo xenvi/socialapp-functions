@@ -168,9 +168,9 @@ exports.createNotificationOnComment = functions
             const comment = db.doc(`/comments/${doc.id}`);
             batch.update(comment, { userImage: change.after.data().imageUrl });
           });
-           return batch.commit();
+           batch.commit();
         }).then(() => {
-          return admin
+           return admin
             .storage()
             .bucket()
             .file(`${change.before.data().imageUrlRef}`)
@@ -181,7 +181,6 @@ exports.createNotificationOnComment = functions
                 console.error(err)
             });
         })
-      
     } else if (change.before.data().headerUrl !== change.after.data().headerUrl && change.before.data().headerUrl !== "") {
       console.log("Header image has been changed");
           return admin
