@@ -137,6 +137,37 @@ exports.createNotificationOnComment = functions
         console.error(err);
       });
   });
+  exports.createNotificationOnProfilePost = functions
+  .region("us-central1")
+  .firestore.document("posts/{postId}")
+  .onCreate((snapshot, context) => {
+    
+    const postId = context.params.postId;
+    console.log("Context postId data: " + postId);
+    return db
+      .doc(`/posts/${postId}`)
+      .get()
+      .then((doc) => {
+        if (
+          doc.exists &&
+          doc.data().userHandle !== snapshot.data().location &&
+          snapshot.data().location !== "explore"
+        ) {
+          console.log("Successfully added profile post notification!");
+          return db.doc(`/notifications/${snapshot.id}`).set({
+            createdAt: new Date().toISOString(),
+            recipient: snapshot.data().location,
+            sender: snapshot.data().userHandle,
+            type: "post",
+            read: false,
+            postId: doc.id,
+          });
+        } else console.log("Failed to add profile post notification. Doc exists: " + doc.exists);
+      })
+      .catch((err) => {
+        console.error(err);
+      });
+  });
 
   exports.onUserImagesChange = functions
   .region("us-central1")
