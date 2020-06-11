@@ -7,13 +7,5 @@ BACK-END TECHNOLOGIES USED:
 - ExpressJS
 - CORS
 
-TO DO:
-- Redesign overall UI/UX to be more modern and sleek
-- Add user follow system
-- Add explore page
-- Redesign user profile page
-- Redesign home page
-- Allow users to post on other user profile pages
-
 Client-side (frontend) Repo:
 https://github.com/xenvi/socialapp-client
