@@ -156,7 +156,7 @@ exports.createNotificationOnComment = functions
           console.log("Successfully added profile post notification!");
           return db.doc(`/notifications/${snapshot.id}`).set({
             createdAt: new Date().toISOString(),
-            recipient: snapshot.data().location,
+            recipient: doc.data().location,
             sender: snapshot.data().userHandle,
             type: "post",
             read: false,
